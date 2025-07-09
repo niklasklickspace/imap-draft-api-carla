@@ -1,9 +1,10 @@
 from flask import Flask, request, jsonify
-import imaplib, time
+import imaplib
+import time
+import email
 
 app = Flask(__name__)
 
-# 1. Draft erstellen
 @app.route('/create-draft', methods=['POST'])
 def create_draft():
     try:
@@ -19,45 +20,11 @@ def create_draft():
         M.append(folder, '\\Draft', imaplib.Time2Internaldate(time.time()), raw_message.encode('utf-8'))
         M.logout()
 
-        return jsonify({'status': 'success'}), 200
+        return jsonify({'status': 'draft created'}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# 2. UID suchen (per Subject oder From)
-@app.route('/get-uid', methods=['POST'])
-def get_uid():
-    try:
-        data = request.json
-        host = data['host']
-        user = data['user']
-        password = data['password']
-        folder = data.get('folder', 'INBOX')
-        subject = data.get('subject')
-        sender = data.get('from')
 
-        M = imaplib.IMAP4_SSL(host, 993)
-        M.login(user, password)
-        M.select(folder)
-
-        if subject:
-            criteria = f'(HEADER Subject "{subject}")'
-        elif sender:
-            criteria = f'(FROM "{sender}")'
-        else:
-            criteria = 'ALL'
-
-        result, data = M.uid('SEARCH', None, criteria)
-        M.logout()
-
-        if result == 'OK' and data[0]:
-            uid_list = data[0].split()
-            return jsonify({'status': 'success', 'uids': [uid.decode() for uid in uid_list]}), 200
-        else:
-            return jsonify({'status': 'not_found', 'uids': []}), 404
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-# 3. Mail flaggen (z. B. \Flagged oder benutzerdefiniert)
 @app.route('/flag-message', methods=['POST'])
 def flag_message():
     try:
@@ -65,19 +32,24 @@ def flag_message():
         host = data['host']
         user = data['user']
         password = data['password']
-        uid = data['uid']
-        flag = data.get('flag', '\\Flagged')
+        message_id = data['message_id']
         folder = data.get('folder', 'INBOX')
 
         M = imaplib.IMAP4_SSL(host, 993)
         M.login(user, password)
         M.select(folder)
-        result = M.uid('STORE', uid, '+FLAGS', f'({flag})')
-        M.logout()
 
-        if result[0] == 'OK':
-            return jsonify({'status': 'success'}), 200
-        else:
-            return jsonify({'status': 'error', 'result': result}), 400
+        # Suche nach Message-ID
+        result, data = M.search(None, f'(HEADER Message-ID "{message_id}")')
+        if result != 'OK' or not data or not data[0]:
+            M.logout()
+            return jsonify({'status': 'not_found', 'message': f'Message-ID {message_id} not found'}), 404
+
+        for num in data[0].split():
+            M.store(num, '+FLAGS', '\\Flagged')
+
+        M.logout()
+        return jsonify({'status': 'message flagged'}), 200
+
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
