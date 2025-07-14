@@ -5,14 +5,8 @@ import email
 
 app = Flask(__name__)
 
-# Optional: Agent-Whitelist, damit nur bekannte Agents erlaubt sind
-ALLOWED_AGENTS = {'carla', 'roberto'}
-
-@app.route('/create-draft/<agent>', methods=['POST'])
-def create_draft(agent):
-    if agent not in ALLOWED_AGENTS:
-        return jsonify({'status': 'error', 'message': f'Unknown agent: {agent}'}), 400
-
+@app.route('/create-draft', methods=['POST'])
+def create_draft():
     try:
         data = request.json
         host = data['host']
@@ -26,16 +20,13 @@ def create_draft(agent):
         M.append(folder, '\\Draft', imaplib.Time2Internaldate(time.time()), raw_message.encode('utf-8'))
         M.logout()
 
-        return jsonify({'status': 'draft created', 'agent': agent}), 200
+        return jsonify({'status': 'draft created'}), 200
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e), 'agent': agent}), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-@app.route('/flag-message/<agent>', methods=['POST'])
-def flag_message(agent):
-    if agent not in ALLOWED_AGENTS:
-        return jsonify({'status': 'error', 'message': f'Unknown agent: {agent}'}), 400
-
+@app.route('/flag-message', methods=['POST'])
+def flag_message():
     try:
         data = request.json
         host = data['host']
@@ -48,16 +39,17 @@ def flag_message(agent):
         M.login(user, password)
         M.select(folder)
 
+        # Suche nach Message-ID
         result, data = M.search(None, f'(HEADER Message-ID "{message_id}")')
         if result != 'OK' or not data or not data[0]:
             M.logout()
-            return jsonify({'status': 'not_found', 'message': f'Message-ID {message_id} not found', 'agent': agent}), 404
+            return jsonify({'status': 'not_found', 'message': f'Message-ID {message_id} not found'}), 404
 
         for num in data[0].split():
             M.store(num, '+FLAGS', '\\Flagged')
 
         M.logout()
-        return jsonify({'status': 'message flagged', 'agent': agent}), 200
+        return jsonify({'status': 'message flagged'}), 200
 
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e), 'agent': agent}), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
