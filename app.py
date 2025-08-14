@@ -61,43 +61,16 @@ def flag_message():
 # ----------------------------
 @app.route('/delete-ai-drafts', methods=['POST'])
 def delete_ai_drafts():
-    """
-    Delete (or move to Trash) drafts that contain the AI marker header.
-    Safety defaults:
-      - Only operates in Drafts (or a provided folder)
-      - Requires AI header filter (cannot be disabled)
-      - Dry-run enabled by default
-      - Moves to Trash by default (safer than hard delete)
-
-    JSON body example:
-    {
-      "host": "001stdmail.shapememory.eu",
-      "user": "user@domain",
-      "password": "*****",
-      "folder": "Drafts",                 # optional, default "Drafts"
-      "trash_folder": "Trash",            # optional, default "Trash"
-      "dry_run": true,                    # optional, default true
-      "mode": "move",                     # "move" (default) or "delete"
-      "expunge": true,                    # optional, default true
-      "header_name": "X-Processed-By",    # optional, default "X-Processed-By"
-      "header_value": "n8n-ai-agent",     # optional, default "n8n-ai-agent"
-      "days": 14                          # optional, if provided -> only BEFORE this age
-    }
-    """
     try:
-        data = request.json or {}
-
+        data = request.json
         host = data['host']
         user = data['user']
         password = data['password']
-
         folder = data.get('folder', 'Drafts')
         trash_folder = data.get('trash_folder', 'Trash')
         dry_run = bool(data.get('dry_run', True))
         mode = data.get('mode', 'move')  # "move" or "delete"
         expunge = bool(data.get('expunge', True))
-
-        # AI header filter is MANDATORY (as requested)
         header_name = data.get('header_name', 'X-Processed-By')
         header_value = data.get('header_value', 'n8n-ai-agent')
         if not header_name or not header_value:
