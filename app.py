@@ -71,8 +71,6 @@ def delete_ai_drafts():
         dry_run = bool(data.get('dry_run', True))
         mode = data.get('mode', 'move')  # "move" or "delete"
         expunge = bool(data.get('expunge', True))
-        header_name = data.get('header_name', 'X-Processed-By')
-        header_value = data.get('header_value', 'n8n-ai-agent')
         if not header_name or not header_value:
             return jsonify({
                 'status': 'error',
