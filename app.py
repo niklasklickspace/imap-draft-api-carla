@@ -81,7 +81,12 @@ def delete_ai_drafts():
         mode = data.get('mode', 'move')            # "move" | "delete"
         expunge = bool(data.get('expunge', True))
 
-    
+     # AI-Header: Pflicht (mit Defaults)
+        header_name = data.get('header_name', 'X-Processed-By')
+        header_value = data.get('header_value', 'n8n-ai-agent')
+        if not header_name or not header_value:
+            return jsonify({'status': 'error',
+                            'message': 'AI header filter is required (header_name + header_value).'}), 400
 
         # Alter: Default 14 Tage
         try:
@@ -101,7 +106,7 @@ def delete_ai_drafts():
             return jsonify({'status': 'error', 'message': f'Cannot select folder "{folder}"'}), 400
 
         # Suche: AI-Header UND älter als {days}
-        search_criteria = ['BEFORE', date_str]
+        search_criteria = ['HEADER', header_name, f'"{header_value}"', 'BEFORE', date_str]
         result, data_ids = M.search(None, *search_criteria)
         if result != 'OK':
             M.logout()
