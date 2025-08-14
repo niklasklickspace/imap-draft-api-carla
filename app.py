@@ -56,54 +56,52 @@ def flag_message():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-# ----------------------------
-# NEW: Delete AI Drafts safely
-# ----------------------------
 @app.route('/delete-ai-drafts', methods=['POST'])
 def delete_ai_drafts():
+    """
+    Löscht/verschiebt NUR Drafts mit AI-Header, die älter als X Tage sind (Default 14).
+    Default-Sicherheit:
+      - folder: Drafts
+      - trash_folder: Trash
+      - dry_run: true
+      - mode: move (statt hard delete)
+      - expunge: true
+      - header_name/value: X-Processed-By: n8n-ai-agent (Pflicht)
+    """
     try:
-        data = request.json
+        data = request.json or {}
+
         host = data['host']
         user = data['user']
         password = data['password']
+
         folder = data.get('folder', 'Drafts')
         trash_folder = data.get('trash_folder', 'Trash')
         dry_run = bool(data.get('dry_run', True))
-        mode = data.get('mode', 'move')  # "move" or "delete"
+        mode = data.get('mode', 'move')            # "move" | "delete"
         expunge = bool(data.get('expunge', True))
-        if not header_name or not header_value:
-            return jsonify({
-                'status': 'error',
-                'message': 'AI header filter is required (header_name + header_value).'
-            }), 400
 
-        # optional age filter
-        days = data.get('days', None)
-        date_clause = None
-        if days is not None:
-            try:
-                days = int(days)
-                cutoff = datetime.utcnow() - timedelta(days=days)
-                date_clause = cutoff.strftime("%d-%b-%Y")  # IMAP date format
-            except Exception:
-                return jsonify({'status': 'error', 'message': 'Invalid "days" value'}), 400
+    
 
+        # Alter: Default 14 Tage
+        try:
+            days = int(data.get('days', 14))
+        except Exception:
+            return jsonify({'status': 'error', 'message': 'Invalid "days" value'}), 400
+        date_str = (datetime.utcnow() - timedelta(days=days)).strftime("%d-%b-%Y")
+
+        # IMAP
         M = imaplib.IMAP4_SSL(host, 993)
         M.login(user, password)
 
-        # strictly operate only in given folder (default: Drafts)
+        # Nur im angegebenen Ordner (Default: Drafts)
         typ, _ = M.select(f'"{folder}"', readonly=False)
         if typ != 'OK':
             M.logout()
             return jsonify({'status': 'error', 'message': f'Cannot select folder "{folder}"'}), 400
 
-        # Build SEARCH criteria: always filter by AI header; add BEFORE if days provided
-        # Multiple criteria are ANDed by IMAP.
-        if date_clause:
-            search_criteria = ['HEADER', header_name, f'"{header_value}"', 'BEFORE', date_clause]
-        else:
-            search_criteria = ['HEADER', header_name, f'"{header_value}"']
-
+        # Suche: AI-Header UND älter als {days}
+        search_criteria = ['HEADER', header_name, f'"{header_value}"', 'BEFORE', date_str]
         result, data_ids = M.search(None, *search_criteria)
         if result != 'OK':
             M.logout()
@@ -112,10 +110,9 @@ def delete_ai_drafts():
         ids = data_ids[0].split() if data_ids and data_ids[0] else []
         matched = len(ids)
 
-        # Dry run: report only
+        # Dry-run oder nichts gefunden
         if dry_run or matched == 0:
-            M.close()
-            M.logout()
+            M.close(); M.logout()
             return jsonify({
                 'status': 'ok',
                 'dry_run': True,
@@ -124,32 +121,31 @@ def delete_ai_drafts():
                 'message': 'Dry-run (no changes)' if dry_run else 'No drafts matched'
             }), 200
 
-        # Safety: only two modes allowed
         if mode not in ('move', 'delete'):
             M.close(); M.logout()
             return jsonify({'status': 'error', 'message': 'Invalid mode. Use "move" or "delete".'}), 400
 
-        # Execute changes
+        # Ausführen
         for num in ids:
             if mode == 'move':
-                # Move to Trash: COPY then mark \Deleted in source
+                # Move to Trash: COPY -> mark \Deleted im Quellordner
                 M.copy(num, trash_folder)
                 M.store(num, '+FLAGS', r'(\Deleted)')
             else:
-                # Hard delete: mark \Deleted in Drafts
+                # Hard delete im Drafts-Ordner
                 M.store(num, '+FLAGS', r'(\Deleted)')
 
         if expunge:
             M.expunge()
 
-        M.close()
-        M.logout()
-
+        M.close(); M.logout()
         return jsonify({
             'status': 'ok',
             'dry_run': False,
             'folder': folder,
             'matched_count': matched,
+            'action': 'moved_to_trash' if mode == 'move' else 'deleted_expunged',
+            'days': days
         }), 200
 
     except Exception as e:
