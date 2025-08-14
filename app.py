@@ -101,7 +101,7 @@ def delete_ai_drafts():
             return jsonify({'status': 'error', 'message': f'Cannot select folder "{folder}"'}), 400
 
         # Suche: AI-Header UND älter als {days}
-        search_criteria = ['HEADER', header_name, f'"{header_value}"', 'BEFORE', date_str]
+        search_criteria = ['BEFORE', date_str]
         result, data_ids = M.search(None, *search_criteria)
         if result != 'OK':
             M.logout()
